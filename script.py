@@ -111,7 +111,7 @@ def grab_additional_images(only=[], num_images=3):
                 del faces_list
 
 
-def convert_videos_to_images(only):
+def convert_videos_to_images(only=[]):
     only = list(map(str, only))
     individuals = only if only else listdir(folders_location)
 
@@ -135,7 +135,7 @@ def convert_videos_to_images(only):
 
                 print(video_file_path)
 
-                cmd = 'ffmpeg -i \'' + video_file_path + '\' -qscale:v 2  \'' + image_folder_path + '_%03d.jpg\''
+                cmd = 'ffmpeg -i \'' + video_file_path + '\' -qscale:v 2 -r 10.0 \'' + image_folder_path + '_%03d.jpg\''
                 sp.call(cmd, shell=True)
 
                 q += 1
