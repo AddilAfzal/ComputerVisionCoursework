@@ -1,7 +1,8 @@
 from operator import itemgetter
 from os import listdir, path, makedirs
-
+import subprocess as sp
 import numpy as np
+
 import cv2
 
 # Cascade files loaded
@@ -102,3 +103,32 @@ def make_folders(training_path="/home/addil/Desktop/computer vision/working/sort
 
             del faces_list[:]
             del faces_list
+
+
+def convert_videos_to_images(training_path="/home/addil/Desktop/computer vision/working/sorted/"):
+    individuals = listdir(training_path)
+
+    for individual_folder_name in individuals:
+        individual_folder_path = training_path + individual_folder_name + "/"
+
+        if path.isdir(individual_folder_path):
+
+            q = 1
+            video_file_names = list(filter(lambda i: i[-3:] in ['mov', 'mp4'], listdir(individual_folder_path)))
+            for video_file_name in video_file_names:
+
+                # Folder per video file.
+                image_folder_path = individual_folder_path + ("angle_%s/" % q)
+                # print(video_folder_path)
+
+                if not path.exists(image_folder_path):
+                    makedirs(image_folder_path)
+
+                video_file_path = individual_folder_path + video_file_name
+
+                print(video_file_path)
+
+                cmd = 'ffmpeg -i \'' + video_file_path + '\' -qscale:v 2  \'' + image_folder_path + '_%03d.jpg\''
+                sp.call(cmd, shell=True)
+
+                q += 1
