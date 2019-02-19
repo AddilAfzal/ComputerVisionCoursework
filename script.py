@@ -36,29 +36,6 @@ def get_sharpness(img):
     # Assuming image is already gray
     return cv2.Laplacian(img, cv2.CV_64F).var()
 
-# img = cv2.imread('2.jpg')
-#
-#
-# for (x, y, w, h) in faces:
-#     cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
-#     roi_gray = gray[y:y + h, x:x + w]
-#     roi_color = img[y:y + h, x:x + w]
-#     eyes = eye_cascade.detectMultiScale(roi_gray)
-#     for (ex, ey, ew, eh) in eyes:
-#         cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 2)
-#
-# (x,y,w,h) = faces[0]
-
-
-def main():
-    img = cv2.imread('2.jpg')
-    faces = get_faces(img)
-
-    for face in faces:
-        cv2.imshow('img', face)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
 
 def list_sharpness(folder="/home/addil/Desktop/computer vision/working/sorted/8/"):
     images = listdir(folder)
@@ -69,40 +46,53 @@ def list_sharpness(folder="/home/addil/Desktop/computer vision/working/sorted/8/
         print(get_sharpness(img))
 
 
-def make_folders(training_path="/home/addil/Desktop/computer vision/working/sorted/"):
+def grab_additional_images(training_path="/home/addil/Desktop/computer vision/working/sorted/", num_images=1):
+    """
+    Function to grab an additional n number of 'sharpest' images from each video file/angle.
+    :param training_path:
+    :param num_images:
+    :return:
+    """
     contents = listdir(training_path)
 
     for content in contents:
-        individual_folder = training_path + content + "/"
+        individual_folder_path = training_path + content + "/"
 
-        if path.isdir(individual_folder):
-            print(individual_folder)
-            individual_folder_faces = individual_folder + "faces/"
-            if not path.exists(individual_folder_faces):
-                makedirs(individual_folder_faces)
+        if path.isdir(individual_folder_path):
 
-            faces_list = []
-            for index, file_name in enumerate(list(filter(lambda i: i[-3:] == 'jpg', listdir(individual_folder)))):
-                image_path = individual_folder + file_name
-                img = cv2.imread(image_path)
-                print(image_path)
+            # Create the training folder if it doesn't already exist.
+            individual_training_folder = individual_folder_path + "training/"
+            if not path.exists(individual_training_folder):
+                makedirs(individual_training_folder)
 
-                for face in get_faces(img):
-                    faces_list.append({
-                        'sharpness': get_sharpness(face),
-                        'image': face,
-                    })
+            # For each folder of pictures starting with the name 'angle', grab the n sharpest images.
+            for angle_folder_name in list(filter(lambda i: i.__contains__("angle"), listdir(individual_folder_path))):
+                angle_folder_path = individual_folder_path + angle_folder_name + "/"
 
-            # save the 25 sharpest faces.
-            sorted_faces = sorted(faces_list, key=itemgetter('sharpness'), reverse=True)
-            q = 0
-            for obj in sorted_faces[:25]:
-                q += 1
-                cv2.imwrite("%s%s.jpg" % (individual_folder_faces, q), obj['image'])
-                del obj['image']
+                faces_list = []
 
-            del faces_list[:]
-            del faces_list
+                # Find faces in each of the images, compute sharpness and store in list.
+                for index, file_name in enumerate(listdir(angle_folder_path)):
+                    image_file_path = angle_folder_path + file_name
+                    img = cv2.imread(image_file_path)
+                    print(image_file_path)
+
+                    for face in get_faces(img):
+                        faces_list.append({
+                            'sharpness': get_sharpness(face),
+                            'image': face,
+                        })
+
+                # save the 25 sharpest faces.
+                sorted_faces = sorted(faces_list, key=itemgetter('sharpness'), reverse=True)
+                q = 0
+                for obj in sorted_faces[:num_images]:
+                    q += 1
+                    cv2.imwrite("%s/%s-%s.jpg" % (individual_training_folder, angle_folder_name, q), obj['image'])
+                    del obj['image']
+
+                del faces_list[:]
+                del faces_list
 
 
 def convert_videos_to_images(training_path="/home/addil/Desktop/computer vision/working/sorted/"):
