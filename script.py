@@ -1,3 +1,4 @@
+from operator import itemgetter
 from os import listdir, path, makedirs
 
 import numpy as np
@@ -8,38 +9,31 @@ face_cascade = cv2.CascadeClassifier('cascades/haarcascade_frontalface_default.x
 eye_cascade = cv2.CascadeClassifier('cascades/haarcascade_eye.xml')
 
 
+def has_eyes(img):
+    # Image provided should already be gray
+    return eye_cascade.detectMultiScale(img).__len__() > 0
+
+
 def get_faces(img):
     # Convert the image to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # Find the faces
-    faces = face_cascade.detectMultiScale(gray)
+    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
     faces_list = []
 
     for (x, y, w, h) in faces:
-        faces_list.append(gray[y:y + h, x:x + w])
+        face = gray[y:y + h, x:x + w]
+        if has_eyes(face):
+            faces_list.append(face)
 
     return faces_list
 
 
-def is_blurry(img):
-    #https://stackoverflow.com/questions/39685757/how-to-make-a-new-filter-and-apply-it-on-an-image-using-cv2-in-python2-7
-
-    # Create a dummy input image.
-    canvas = np.zeros((100, 100), dtype=np.uint8)
-    canvas = cv2.circle(canvas, (50, 50), 20, (255,), -1)
-
-    kernel = np.array([[-1, -1, -1],
-                       [-1, 4, -1],
-                       [-1, -1, -1]])
-
-    dst = cv2.filter2D(canvas, -1, kernel)
-
-
 def get_sharpness(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    return cv2.Laplacian(gray, cv2.CV_64F).var()
+    # Assuming image is already gray
+    return cv2.Laplacian(img, cv2.CV_64F).var()
 
 # img = cv2.imread('2.jpg')
 #
@@ -86,11 +80,25 @@ def make_folders(training_path="/home/addil/Desktop/computer vision/working/sort
             if not path.exists(individual_folder_faces):
                 makedirs(individual_folder_faces)
 
-            q = 0
+            faces_list = []
             for index, file_name in enumerate(list(filter(lambda i: i[-3:] == 'jpg', listdir(individual_folder)))):
                 image_path = individual_folder + file_name
                 img = cv2.imread(image_path)
                 print(image_path)
+
                 for face in get_faces(img):
-                    q += 1
-                    cv2.imwrite("%s%s.jpg" % (individual_folder_faces, q), face)
+                    faces_list.append({
+                        'sharpness': get_sharpness(face),
+                        'image': face,
+                    })
+
+            # save the 25 sharpest faces.
+            sorted_faces = sorted(faces_list, key=itemgetter('sharpness'), reverse=True)
+            q = 0
+            for obj in sorted_faces[:25]:
+                q += 1
+                cv2.imwrite("%s%s.jpg" % (individual_folder_faces, q), obj['image'])
+                del obj['image']
+
+            del faces_list[:]
+            del faces_list
