@@ -2,8 +2,9 @@ from operator import itemgetter
 from os import listdir, path, makedirs
 import subprocess as sp
 from shutil import rmtree
-import numpy as np
+import face_recognition
 import cv2
+import numpy as np
 
 # Cascade files loaded
 face_cascade = cv2.CascadeClassifier('cascades/haarcascade_frontalface_default.xml')
@@ -11,6 +12,8 @@ eye_cascade = cv2.CascadeClassifier('cascades/haarcascade_eye.xml')
 profile_face_cascade = cv2.CascadeClassifier('cascades/haarcascade_profileface.xml')
 
 folders_location = "/home/addil/Desktop/computer vision/working/sorted/"
+
+recognizer = cv2.face.LBPHFaceRecognizer_create()
 
 
 def has_eyes(img):
@@ -148,14 +151,45 @@ def reset_folders(only=[], full=False):
 
     for individual_folder_name in individuals:
 
-        if individual_folder_name:
-            individual_folder_path = folders_location + individual_folder_name + "/"
+        individual_folder_path = folders_location + individual_folder_name + "/"
 
-            individual_training_folder = individual_folder_path + "training"
-            if path.exists(individual_training_folder):
-                rmtree(individual_training_folder)
+        individual_training_folder = individual_folder_path + "training"
+        if path.exists(individual_training_folder):
+            rmtree(individual_training_folder)
 
-            if full:
-                for f in listdir(individual_folder_path):
-                    if f.__contains__("angle"):
-                        rmtree(individual_folder_path + f)
+        if full:
+            for f in listdir(individual_folder_path):
+                if f.__contains__("angle"):
+                    rmtree(individual_folder_path + f)
+
+
+def prepare_dataset(only=[]):
+    only = list(map(str, only))
+
+    individuals = only if only else listdir(folders_location)
+
+    faces = []
+    labels = []
+
+    for individual_folder_name in individuals:
+        individual_training_folder_path = folders_location + individual_folder_name + "/training/"
+
+        image_paths = listdir(individual_training_folder_path)
+        for image_path in image_paths:
+            img = cv2.imread(individual_training_folder_path + image_path)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+            faces.append(gray)
+            labels.append(int(individual_folder_name))
+
+            print(individual_training_folder_path + image_path)
+
+    return faces, np.array(labels)
+
+
+def recognise_face(img_path):
+    img = cv2.imread(img_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    id, accuracy = recognizer.predict(gray)
+
+    return id, accuracy
