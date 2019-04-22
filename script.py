@@ -24,7 +24,7 @@ def show_image(img, dim):
     cv2.destroyAllWindows()
 
 
-def get_faces(img, position=False, greyscale=True):
+def get_faces(img, position=False, greyscale=True, check_eyes=True):
     """
     Given an image, extract all faces.
     :param position: Whether to return the position or raw image.
@@ -36,8 +36,8 @@ def get_faces(img, position=False, greyscale=True):
     grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # Find the faces
-    faces = face_cascade.detectMultiScale(grey, 1.2, 5)
-    profile_faces = profile_face_cascade.detectMultiScale(grey, 1.2, 5)
+    faces = face_cascade.detectMultiScale(grey, 1.1, 20)
+    profile_faces = profile_face_cascade.detectMultiScale(grey, 1.1, 20)
 
     # Where the faces will be stored once extracted.
     faces_list = []
@@ -48,28 +48,19 @@ def get_faces(img, position=False, greyscale=True):
         # Extract the face from the image.
         face = grey[y:y + h, x:x + w] if greyscale else img[y:y + h, x:x + w]
 
-        eyes = number_of_eyes(face)
-
         # Check if this contains eyes. This is needed to prevent noise as being found as a face.
-        if eyes in [1, 2]:
+        if not check_eyes or number_of_eyes(face) in [1, 2]:
 
             # Add to the list of faces.
             faces_list.append((x, y, w, h) if position else face)
-        else:
-            print(eyes)
 
     # If there weren't any frontal faces in the image, we'll look for profile faces
-    # if not faces_list:
-
     # For each profile face detected
     for (x, y, w, h) in profile_faces:
         face = grey[y:y + h, x:x + w] if greyscale else img[y:y + h, x:x + w]
-        eyes = number_of_eyes(face)
 
-        if eyes in [1, 2]:
+        if not check_eyes or number_of_eyes(face) in [1, 2]:
             faces_list.append((x, y, w, h) if position else face)
-        else:
-            print(eyes)
 
     if not faces_list:
         print("No face")
@@ -223,18 +214,18 @@ def recognise_face(img_path=None, img=None):
 
 
 def find_faces_and_label():
-    img = cv2.imread('group2.jpg')
+    img = cv2.imread('group3.jpg')
 
-    faces = get_faces(img, position=True, greyscale=False)
+    faces = get_faces(img, position=True, greyscale=False, check_eyes=False)
 
     for face in faces:
         x, y, w, h = face
-        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 3)
 
-        prediction_one, prediction_two = predict(img[y:y+h, x:x+w])
+        prediction, level = predict(img[y:y+h, x:x+w])
 
         # cv2.putText(img, "%s %s" % (number, (accuracy*100).round()/100), (x + 2, y + h - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), lineType=cv2.LINE_AA)
-        cv2.putText(img, "%s, %s" % (prediction_one, prediction_two), (x + 4, y + h - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), lineType=cv2.LINE_AA)
+        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0) if level > 8 else (0, 0, 255), 3)
+        cv2.putText(img, "%s - %s" % (prediction, level), (x + 4, y + h - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 170, 0), lineType=cv2.LINE_AA)
 
     cv2.imshow('img', cv2.resize(img, None, fx=0.5, fy=0.5))
     cv2.waitKey()

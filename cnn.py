@@ -119,33 +119,6 @@ def start_training():
         model.load_state_dict(best_model_wts)
         return model
 
-
-    def visualize_model(model, num_images=6):
-        was_training = model.training
-        model.eval()
-        images_so_far = 0
-        fig = plt.figure()
-
-        with torch.no_grad():
-            for i, (inputs, labels) in enumerate(dataloaders['val']):
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                outputs = model(inputs)
-                _, preds = torch.max(outputs, 1)
-
-                for j in range(inputs.size()[0]):
-                    images_so_far += 1
-                    ax = plt.subplot(num_images//2, 2, images_so_far)
-                    ax.axis('off')
-                    ax.set_title('predicted: {}'.format(class_names[preds[j]]))
-                    # imshow(inputs.cpu().data[j])
-
-                    if images_so_far == num_images:
-                        model.train(mode=was_training)
-                        return
-            model.train(mode=was_training)
-
     model_ft = models.resnet18(pretrained=True)
     num_ftrs = model_ft.fc.in_features
     model_ft.fc = nn.Linear(num_ftrs, 69)
@@ -191,21 +164,18 @@ def predict(image):
 
     x = data_transforms['val'](image)
     # x = x.unsqueeze_(0)
-    x = x.to(torch.device('cuda'))
+    x = x.to(device)
 
     x = x.view(1, 3, 224, 224)
 
     output = model(x)
 
-    accuracies, ids = torch.sort(output.data, descending=True)
+    accuracies, ids = torch.max(output.data, 1)
 
-    predictions = list(map(int, ids[0][:2]))
 
     q = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '2', '20', '21', '22', '24', '3', '33', '34', '36', '37',
      '38', '39', '4', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '5', '50', '51', '52', '53', '54',
      '55', '56', '57', '58', '59', '6', '60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '7', '70', '71',
      '72', '73', '74', '75', '76', '77', '78', '79', '8', '80', '81', '9']
 
-    print(q[predictions[0]], q[predictions[1]])
-
-    return q[predictions[0]], q[predictions[1]]
+    return q[ids[0]], round(float(accuracies)*100)/100
