@@ -74,7 +74,7 @@ def reset_folders(only=[], full=False):
     :return:
     """
 
-    from script import folders_location
+    from settings import folders_location
 
     only = list(map(str, only))
 
@@ -102,7 +102,7 @@ def get_image_sizes():
     widths = []
     heights = []
 
-    from script import folders_location
+    from settings import folders_location
     for individual_folder_name in listdir(folders_location):
         individual_training_folder_path = folders_location + individual_folder_name + "/training/"
 

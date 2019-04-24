@@ -1,18 +1,14 @@
 from operator import itemgetter
-from os import listdir, path, makedirs
 
 from math import floor
 
 from cnn import predict, start_training
 from helper_functions import *
-import cv2, face_recognition, shutil as rmtree, subprocess as sp, numpy as np
+import cv2, subprocess as sp, numpy as np
 
-folders_location = "/home/addil/Desktop/computer vision/working/sorted/"
-cnn_folders_location = "/home/addil/Desktop/cnn/"
-face_folders_location = "/home/addil/Desktop/face/"
-group_images_location = "/home/addil/Desktop/computer vision/working/cam group/"
-group_image_faces_location = "/home/addil/Desktop/group_extracted/"
-group_image_faces_location_two = "/home/addil/Desktop/group_extracted_2/"
+from settings import folders_location, cnn_folders_location, face_folders_location, group_images_location, \
+    group_image_faces_location, group_image_faces_location_two
+
 recognizer = cv2.face.LBPHFaceRecognizer_create()
 
 
@@ -340,7 +336,8 @@ def combine_group_extract_with_cnn():
     individuals = listdir(folders_location)
 
     for individual in individuals:
-        group_extracts = list(filter(lambda i: i[-3:] in ['jpg'], listdir(folders_location + individual + "/group_extract")))
+        group_extracts = list(filter(lambda i: i[-3:] in ['jpg'], listdir(
+            folders_location + individual + "/group_extract")))
         for image_name in group_extracts:
             cmd = "cp '%s' '%s'" % (folders_location + individual + "/group_extract/" + image_name, face_folders_location + "/train/" + individual + "/")
             sp.call(cmd, shell=True)

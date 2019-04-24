@@ -1,0 +1,6 @@
+folders_location = "/home/addil/Desktop/computer vision/working/sorted/"
+cnn_folders_location = "/home/addil/Desktop/cnn/"
+face_folders_location = "/home/addil/Desktop/face/"
+group_images_location = "/home/addil/Desktop/computer vision/working/cam group/"
+group_image_faces_location = "/home/addil/Desktop/group_extracted/"
+group_image_faces_location_two = "/home/addil/Desktop/group_extracted_2/"
