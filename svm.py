@@ -1,6 +1,7 @@
 from os import listdir
 
 import cv2, numpy as np
+from cv2.xfeatures2d import SIFT_create
 
 from helper_functions import image_resize
 from settings import face_folders_location
@@ -9,6 +10,8 @@ from settings import face_folders_location
 Notes
 Changed 3 fields to get the best result:
 image width, C and Gamma, using trial and error.
+https://stackoverflow.com/questions/37715160/how-do-i-train-an-svm-classifier-using-hog-features-in-opencv-3-0-in-python?rq=1
+https://docs.opencv.org/trunk/dd/d3b/tutorial_py_svm_opencv.html
 """
 
 SZ=20
@@ -59,27 +62,21 @@ def train_svm(feature_type="HOG"):
         person_directory = training_faces_location + folder + "/"
         all_filenames = listdir(person_directory)
 
-        sample_filenames = np.random.choice(all_filenames, 10, replace=True) # Extract 10 images from each folder
+        sample_filenames = np.random.choice(all_filenames, 10, replace=False) # Extract 10 images from each folder
         # test_filenames = list(set(sample_filenames) - set(all_filenames))
 
         for filename in all_filenames:
             image = cv2.imread(person_directory + filename)
-            image = image_resize(image, width=30)
-            image_greyscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            image_greyscale = deskew(image_greyscale)
-
-            # if feature_type == "HOG":
-            descriptor = (hog(image_greyscale))
-            # faces = np.append(faces, descriptor)
-            # labels = np.append(labels, int(folder))
+            image_transformed = image_transform(image, feature_type)
 
             # If the image was selected at random, add it to the faces/labels list, otherwise add to test set.
-            if filename in sample_filenames:
-                faces.append(descriptor)
-                labels.append(int(folder))
-            else:
-                test_faces.append(descriptor)
-                test_labels.append(int(folder))
+            if image_transformed is not None:
+                if filename in sample_filenames:
+                    faces.append(image_transformed)
+                    labels.append(int(folder))
+                else:
+                    test_faces.append(image_transformed)
+                    test_labels.append(int(folder))
 
             print(folder)
 
@@ -98,13 +95,13 @@ def train_svm(feature_type="HOG"):
     svm.setGamma(1.055e-07)
 
     # Train SVM on training data
-    svm.train(np.float32(faces).reshape(-1, 64), cv2.ml.ROW_SAMPLE, np.array(labels))
+    svm.train(np.float32(faces), cv2.ml.ROW_SAMPLE, np.array(labels))
     # svm.trainAuto(np.float32(faces).reshape(-1, 64), cv2.ml.ROW_SAMPLE, np.array(labels))
 
     # Save trained model
     svm.save("hog_svm.yml")
 
-    results = predict_svm(test_faces, processed=True)
+    results = predict_svm(test_faces, transformed=True)
 
     q = zip(results, test_labels)
 
@@ -113,30 +110,69 @@ def train_svm(feature_type="HOG"):
         t += 1 if int(x) == y else 0
         f += 1 if int(x) != y else 0
 
-    print("%s/%s" % (t, t+f))
+    print("Accuracy %s/%s (%s%%)" % (t, t+f, round(t/(t+f)*10000)/100))
 
     return svm
 
 
-def predict_svm(faces, processed=False):
-
-    if not processed:
+def predict_svm(faces, transformed=False):
+    """
+    Given a list of faces, predict their labels.
+    :param faces:
+    :param transformed: whether the list of imaged has already been transformed.
+    :return:
+    """
+    if not transformed:
         descriptors = []
 
         for image in faces:
-            image = image_resize(image, width=30)
-            image_greyscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            descriptors.append(hog(deskew(image_greyscale)))
-
+            descriptors.append(image_transform(image))
     else:
         descriptors = faces
 
     svm = cv2.ml.SVM_load('hog_svm.yml')
-    return svm.predict(np.float32(descriptors).reshape(-1, 64))[1].ravel()
+    return svm.predict(np.float32(descriptors))[1].ravel()
 
-        # print(image_names)
-        # descriptor = hog.compute(im)
-#
-#
-# # Test on a held out test set
-# testResponse = svm.predict(testData)[1].ravel()
+
+def image_transform(image, feature_type="HOG"):
+    """
+    Resize the image, then convert to greyscale, then deskew, then compute hog.
+    :param image:
+    :param feature_type: HOG or SURF
+    :return: image transformed
+    """
+
+    if feature_type == 'SURF':
+
+        image = image_resize(image, width=150)
+        image_greyscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        print(image_greyscale.shape)
+
+        # detector = cv2.FastFeatureDetector_create()
+        # kp = detector.detect(image_greyscale, None)
+        #
+        # br = cv2.BRISK_create()
+        # kp, des = br.compute(image_greyscale, kp)
+        # return des
+
+        surf = cv2.xfeatures2d.SURF_create()
+
+        kp = surf.detect(image_greyscale)
+
+        # kp = kp if len(kp) == 10 else kp[:10]
+
+        kp, des = surf.compute(image_greyscale, kp)
+        return np.float32(des)
+
+        # print(np.float32(des).resize((des.size, 1)))
+
+        return des
+
+    elif feature_type == 'HOG':
+        image = image_resize(image, width=30)
+        image_greyscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        return hog(deskew(image_greyscale))
+
+    else:
+        raise Exception("Missing feature type")

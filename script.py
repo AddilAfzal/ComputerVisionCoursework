@@ -23,8 +23,8 @@ def show_image(img, dim):
 def get_faces(img, position=False, greyscale=True, check_eyes=True):
     """
     Given an image, extract all faces.
-    :param position: Whether to return the position or raw image.
     :param img: image, not path
+    :param position: Whether to return the position or raw image.
     :return: A list of faces in grey
     """
 
