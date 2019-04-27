@@ -2,6 +2,7 @@ from shutil import rmtree
 from os import listdir, path, makedirs
 
 import cv2
+import numpy as np
 
 face_cascade = cv2.CascadeClassifier('cascades/haarcascade_frontalface_default.xml')
 eye_cascade = cv2.CascadeClassifier('cascades/haarcascade_eye.xml')
@@ -120,3 +121,35 @@ def get_image_sizes():
     print("Average: %s" % (np.average(widths)))
 
     return widths
+
+
+bin_n = 16 # Number of bins
+
+
+def hog(img):
+    gx = cv2.Sobel(img, cv2.CV_32F, 1, 0)
+    gy = cv2.Sobel(img, cv2.CV_32F, 0, 1)
+    mag, ang = cv2.cartToPolar(gx, gy)
+    bins = np.int32(bin_n*ang/(2*np.pi))    # quantizing binvalues in (0...16)
+    bin_cells = bins[:10,:10], bins[10:,:10], bins[:10,10:], bins[10:,10:]
+    mag_cells = mag[:10,:10], mag[10:,:10], mag[:10,10:], mag[10:,10:]
+    hists = [np.bincount(b.ravel(), m.ravel(), bin_n) for b, m in zip(bin_cells, mag_cells)]
+    hist = np.hstack(hists)     # hist is a 64 bit vector
+    return hist
+
+
+SZ=20
+
+
+def deskew(img):
+    m = cv2.moments(img)
+    if abs(m['mu02']) < 1e-2:
+        # no deskewing needed.
+        return img.copy()
+    # Calculate skew based on central momemts.
+    skew = m['mu11']/m['mu02']
+    # Calculate affine transform to correct skewness.
+    M = np.float32([[1, skew, -0.5*SZ*skew], [0, 1, 0]])
+    # Apply affine transform
+    img = cv2.warpAffine(img, M, (SZ, SZ), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
+    return img

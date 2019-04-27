@@ -2,9 +2,8 @@ from os import listdir, path
 import cv2
 import numpy as np
 
-from helper_functions import image_resize
+from helper_functions import image_resize, hog, deskew
 from script import get_faces
-from svm import hog, deskew
 
 """
 http://kdef.se/download-2/7Yri1UsotH.html
@@ -117,7 +116,7 @@ def train_expressions_svm():
     # svm.trainAuto(np.float32(faces).reshape(-1, 64), cv2.ml.ROW_SAMPLE, np.array(labels))
 
     # Save trained model
-    svm.save("expressions_svm.yml")
+    svm.save("trained_data_files/expressions_svm.yml")
 
     results = predict_expression_svm(test_descriptors, transformed=True)
 
@@ -167,7 +166,7 @@ def predict_expression_svm(faces, transformed=False):
     else:
         descriptors = faces
 
-    svm = cv2.ml.SVM_load('expressions_svm.yml')
+    svm = cv2.ml.SVM_load('trained_data_files/expressions_svm.yml')
     return svm.predict(np.float32(descriptors))[1].ravel()
 
 

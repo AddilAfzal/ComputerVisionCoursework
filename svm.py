@@ -1,9 +1,10 @@
+from collections import Counter
 from os import listdir
 
 import cv2, numpy as np
 from cv2.xfeatures2d import SIFT_create
 
-from helper_functions import image_resize
+from helper_functions import image_resize, hog, deskew
 from settings import face_folders_location
 
 """
@@ -14,71 +15,66 @@ https://stackoverflow.com/questions/37715160/how-do-i-train-an-svm-classifier-us
 https://docs.opencv.org/trunk/dd/d3b/tutorial_py_svm_opencv.html
 """
 
-SZ=20
-bin_n = 16 # Number of bins
+sift = cv2.xfeatures2d.SIFT_create()
+flann_params = dict(algorithm=1, trees=5)
+matcher = cv2.FlannBasedMatcher(flann_params, {})
 
 
-def hog(img):
-    gx = cv2.Sobel(img, cv2.CV_32F, 1, 0)
-    gy = cv2.Sobel(img, cv2.CV_32F, 0, 1)
-    mag, ang = cv2.cartToPolar(gx, gy)
-    bins = np.int32(bin_n*ang/(2*np.pi))    # quantizing binvalues in (0...16)
-    bin_cells = bins[:10,:10], bins[10:,:10], bins[:10,10:], bins[10:,10:]
-    mag_cells = mag[:10,:10], mag[10:,:10], mag[:10,10:], mag[10:,10:]
-    hists = [np.bincount(b.ravel(), m.ravel(), bin_n) for b, m in zip(bin_cells, mag_cells)]
-    hist = np.hstack(hists)     # hist is a 64 bit vector
-    return hist
-
-
-def deskew(img):
-    m = cv2.moments(img)
-    if abs(m['mu02']) < 1e-2:
-        # no deskewing needed.
-        return img.copy()
-    # Calculate skew based on central momemts.
-    skew = m['mu11']/m['mu02']
-    # Calculate affine transform to correct skewness.
-    M = np.float32([[1, skew, -0.5*SZ*skew], [0, 1, 0]])
-    # Apply affine transform
-    img = cv2.warpAffine(img, M, (SZ, SZ), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
-    return img
-
-
-def train_svm(feature_type="HOG"):
+def train_svm(feature_type="SIFT"):
     """
     Get faces from folders and compute hog for each.
     Each face will be de-skewed first.
     :return:
     """
 
-    faces, labels = [], []
+    faces, labels, tmp = [], [], []
     test_faces, test_labels = [], []
 
     training_faces_location = face_folders_location + "train/"
 
     folders = listdir(training_faces_location)
 
-    for folder in folders:
+    bow = cv2.BOWKMeansTrainer(200)
+    bow_extract = cv2.BOWImgDescriptorExtractor(sift, matcher)
+
+    for index, folder in enumerate(folders):
         person_directory = training_faces_location + folder + "/"
         all_filenames = listdir(person_directory)
 
-        sample_filenames = np.random.choice(all_filenames, 10, replace=False) # Extract 10 images from each folder
+        sample_filenames = np.random.choice(all_filenames, 10, replace=False)  # Extract 10 images from each folder
         # test_filenames = list(set(sample_filenames) - set(all_filenames))
 
         for filename in all_filenames:
             image = cv2.imread(person_directory + filename)
             image_transformed = image_transform(image, feature_type)
 
-            # If the image was selected at random, add it to the faces/labels list, otherwise add to test set.
-            if image_transformed is not None:
-                if filename in sample_filenames:
-                    faces.append(image_transformed)
-                    labels.append(int(folder))
-                else:
-                    test_faces.append(image_transformed)
-                    test_labels.append(int(folder))
+            if feature_type == "HOG":
+                # If the image was selected at random, add it to the faces/labels list, otherwise add to test set.
+                if image_transformed is not None:
+                    (faces if filename in sample_filenames else test_faces).append(image_transformed)
+                    (labels if filename in sample_filenames else test_labels).append(int(folder))
 
-            print(folder)
+            elif feature_type == "SIFT":
+                kp, descriptors = sift.detectAndCompute(image_transformed, None)
+                bow.add(descriptors)
+
+                tmp.append((folder, image_transformed))
+
+        print("%s/%s" % (index + 1, len(folders)))
+
+    if feature_type == "SIFT":
+        bow_extract.setVocabulary(bow.cluster())
+
+        for folder in folders:
+            items = list(filter(lambda x: x[0] == folder, tmp))
+            sample_indexes = np.random.choice(len(items), 10, replace=False)  # Extract 10 images from each folder
+
+            for i, (label, image) in enumerate(items):
+                siftkp = sift.detect(image)
+                bowsig = bow_extract.compute(image, siftkp)
+                (faces if i in sample_indexes else test_faces).extend(bowsig)
+                (labels if i in sample_indexes else test_labels).append(int(label))
+                print(i)
 
     print("Training the SVM")
 
@@ -87,51 +83,77 @@ def train_svm(feature_type="HOG"):
     svm.setType(cv2.ml.SVM_C_SVC)
     # Set SVM Kernel to Radial Basis Function (RBF)
     svm.setKernel(cv2.ml.SVM_RBF)
-    # # Set parameter C
-    # svm.setC(1) # To adjust
-    # # Set parameter Gamma
-    # svm.setGamma(1) # To adjust
-    svm.setC(22)
-    svm.setGamma(1.055e-07)
 
-    # Train SVM on training data
-    svm.train(np.float32(faces), cv2.ml.ROW_SAMPLE, np.array(labels))
-    # svm.trainAuto(np.float32(faces).reshape(-1, 64), cv2.ml.ROW_SAMPLE, np.array(labels))
+    if feature_type == "HOG":
+        svm.setC(22)
+        svm.setGamma(1.055e-07)
+        svm.train(np.float32(faces), cv2.ml.ROW_SAMPLE, np.array(labels))
+    elif feature_type == "SIFT":
+        svm.trainAuto(np.float32(faces), cv2.ml.ROW_SAMPLE, np.array(labels))
 
     # Save trained model
-    svm.save("hog_svm.yml")
+    svm.save("trained_data_files/%s_svm.yml" % feature_type.lower())
 
-    results = predict_svm(test_faces, transformed=True)
+    results = predict_svm(test_faces, feature_type, transformed=True)
 
-    q = zip(results, test_labels)
+    predictions_with_actual = zip(results, test_labels)
 
-    t, f = 0, 0
-    for (x, y) in list(q):
-        t += 1 if int(x) == y else 0
-        f += 1 if int(x) != y else 0
+    counter = Counter(map(lambda x: x[0] == x[1], predictions_with_actual))
+    t, f = counter[True], counter[False]
 
-    print("Accuracy %s/%s (%s%%)" % (t, t+f, round(t/(t+f)*10000)/100))
+    print("Accuracy %s/%s (%s%%)" % (t, t + f, round(t / (t + f) * 10000) / 100))
 
     return svm
 
 
-def predict_svm(faces, transformed=False):
+def predict_svm(faces, feature_type="HOG", transformed=False):
     """
     Given a list of faces, predict their labels.
     :param faces:
+    :param feature_type:
     :param transformed: whether the list of imaged has already been transformed.
     :return:
     """
-    if not transformed:
-        descriptors = []
+    dataset = []
+    svm = cv2.ml.SVM_load("trained_data_files/%s_svm.yml" % feature_type.lower())
 
-        for image in faces:
-            descriptors.append(image_transform(image))
+    if feature_type == "HOG":
+
+        if not transformed:
+            for image in faces:
+                dataset.append(image_transform(image, feature_type))
+
+            return svm.predict(np.float32(dataset))[1].ravel()
+
+        else:
+            return svm.predict(np.float32(faces))[1].ravel()
+
+    elif feature_type == "SIFT":
+        if not transformed:
+            bow = cv2.BOWKMeansTrainer(200)
+            bow_extract = cv2.BOWImgDescriptorExtractor(sift, matcher)
+            tmp = []
+
+            for face in faces:
+                image_transformed = image_transform(face, feature_type)
+                kp, dataset = sift.detectAndCompute(image_transformed, None)
+                bow.add(dataset)
+                tmp.append(image_transformed)
+
+            bow_extract.setVocabulary(bow.cluster())
+
+            for face in tmp:
+                siftkp = sift.detect(face)
+                bowsig = bow_extract.compute(face, siftkp)
+                dataset.extend(bowsig)
+
+        else:
+            dataset = faces
+
+        return svm.predict(np.float32(dataset))[1].ravel()
+
     else:
-        descriptors = faces
-
-    svm = cv2.ml.SVM_load('hog_svm.yml')
-    return svm.predict(np.float32(descriptors))[1].ravel()
+        raise Exception("Missing feature type")
 
 
 def image_transform(image, feature_type="HOG"):
@@ -142,37 +164,13 @@ def image_transform(image, feature_type="HOG"):
     :return: image transformed
     """
 
-    if feature_type == 'SURF':
-
-        image = image_resize(image, width=150)
-        image_greyscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        print(image_greyscale.shape)
-
-        # detector = cv2.FastFeatureDetector_create()
-        # kp = detector.detect(image_greyscale, None)
-        #
-        # br = cv2.BRISK_create()
-        # kp, des = br.compute(image_greyscale, kp)
-        # return des
-
-        surf = cv2.xfeatures2d.SURF_create()
-
-        kp = surf.detect(image_greyscale)
-
-        # kp = kp if len(kp) == 10 else kp[:10]
-
-        kp, des = surf.compute(image_greyscale, kp)
-        return np.float32(des)
-
-        # print(np.float32(des).resize((des.size, 1)))
-
-        return des
-
-    elif feature_type == 'HOG':
+    if feature_type == 'HOG':
         image = image_resize(image, width=30)
         image_greyscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         return hog(deskew(image_greyscale))
-
+    elif feature_type == "SIFT":
+        image_greyscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return image_greyscale
     else:
         raise Exception("Missing feature type")
