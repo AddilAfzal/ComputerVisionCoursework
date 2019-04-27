@@ -1,8 +1,10 @@
-from os import listdir
+from os import listdir, path
 import cv2
 import numpy as np
+
+from helper_functions import image_resize
 from script import get_faces
-from svm import image_transform
+from svm import hog, deskew
 
 """
 http://kdef.se/download-2/7Yri1UsotH.html
@@ -33,11 +35,16 @@ def train_expressions_svm():
 
     folders = listdir(dataset_path)
 
+    # image_size = []
+
     for folder_name in folders:
         folder_path = dataset_path + folder_name + "/"
         image_filenames = filter(lambda x: 'FL' not in x and 'FR' not in x, listdir(folder_path))
 
         print(image_filenames)
+
+        folder_contents = []
+        skip = False
 
         for image_filename in image_filenames:
             print(image_filename)
@@ -56,12 +63,34 @@ def train_expressions_svm():
                 raise Exception("Label error")
 
             image_path = folder_path + image_filename
+
+            # file_size = path.getsize(image_path)
+            # print(file_size)
+            # image_size.append(file_size)
+            # if file_size/1000 < 20:
+            #     # Something is wrong with the image. Skip the folder
+            #     skip = True
+            #     print("Skipping")
+            #     raise Exception("Skipping")
+            #     continue
+
             image = cv2.imread(image_path)
+            face = get_faces(image, greyscale=False, check_eyes=False, use_custom_scale=False)
+
+            if len(face) > 0:
+                face = face[0]
+            else:
+                skip = True
+                break
+
             # face = get_faces(image, greyscale=False, check_eyes=False)[0]
 
-            image_transformed = image_transform(image, feature_type="HOG")
+            image_transformed = image_transform(face)
 
-            image_labels.append( (image_transformed, label) )
+            folder_contents.append( (image_transformed, label) )
+
+        if not skip:
+            image_labels += folder_contents
 
     dt = np.dtype('object,float')
 
@@ -80,12 +109,8 @@ def train_expressions_svm():
     svm.setType(cv2.ml.SVM_C_SVC)
     # Set SVM Kernel to Radial Basis Function (RBF)
     svm.setKernel(cv2.ml.SVM_RBF)
-    # # Set parameter C
-    # svm.setC(1) # To adjust
-    # # Set parameter Gamma
-    # svm.setGamma(1) # To adjust
-    svm.setC(12)
-    svm.setGamma(0.4e-08)
+    svm.setC(13)    # To adjust
+    svm.setGamma(2.4e-08)   # To adjust
 
     # Train SVM on training data
     svm.train(np.float32(sample_descriptors), cv2.ml.ROW_SAMPLE, np.array(sample_labels))
@@ -94,7 +119,7 @@ def train_expressions_svm():
     # Save trained model
     svm.save("expressions_svm.yml")
 
-    results = predict_svm(test_descriptors, transformed=True)
+    results = predict_expression_svm(test_descriptors, transformed=True)
 
     q = zip(results, test_labels)
 
@@ -127,7 +152,7 @@ def check_folders():
             raise Exception("Folder %s has a missing image" % folder_name)
 
 
-def predict_svm(faces, transformed=False):
+def predict_expression_svm(faces, transformed=False):
     """
     Given a list of faces, predict their labels.
     :param faces:
@@ -144,3 +169,16 @@ def predict_svm(faces, transformed=False):
 
     svm = cv2.ml.SVM_load('expressions_svm.yml')
     return svm.predict(np.float32(descriptors))[1].ravel()
+
+
+def image_transform(image):
+    """
+    Resize the image, then convert to greyscale, then deskew, then compute hog.
+    :param image:
+    :return: image transformed
+    """
+
+    image = image_resize(image, width=25)
+    image_greyscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    return hog(deskew(image_greyscale))

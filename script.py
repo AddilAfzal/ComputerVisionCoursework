@@ -20,9 +20,12 @@ def show_image(img, dim):
     cv2.destroyAllWindows()
 
 
-def get_faces(img, position=False, greyscale=True, check_eyes=True):
+def get_faces(img, position=False, greyscale=True, check_eyes=True, use_custom_scale=True):
     """
     Given an image, extract all faces.
+    :param use_custom_scale:
+    :param check_eyes:
+    :param greyscale:
     :param img: image, not path
     :param position: Whether to return the position or raw image.
     :return: A list of faces in grey
@@ -31,9 +34,11 @@ def get_faces(img, position=False, greyscale=True, check_eyes=True):
     # Convert the image to greyscale
     grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+    scale = [1.1, 20] if use_custom_scale else []
+
     # Find the faces
-    faces = face_cascade.detectMultiScale(grey, 1.1, 20)
-    profile_faces = profile_face_cascade.detectMultiScale(grey, 1.1, 20)
+    faces = face_cascade.detectMultiScale(grey, *scale)
+    profile_faces = profile_face_cascade.detectMultiScale(grey, *scale)
 
     # Where the faces will be stored once extracted.
     faces_list = []
@@ -214,14 +219,17 @@ def find_faces_and_label():
 
     faces = get_faces(img, position=True, greyscale=False, check_eyes=False)
 
+    from facial_expressions import predict_expression_svm
+
     for face in faces:
         x, y, w, h = face
 
         prediction, level = predict(img[y:y+h, x:x+w])
+        expression = predict_expression_svm([img[y:y+h, x:x+w]])
 
         # cv2.putText(img, "%s %s" % (number, (accuracy*100).round()/100), (x + 2, y + h - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), lineType=cv2.LINE_AA)
         cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0) if level > 8 else (0, 0, 255), 3)
-        cv2.putText(img, "%s - %s" % (prediction, level), (x + 4, y + h - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 170, 0), lineType=cv2.LINE_AA)
+        cv2.putText(img, "%s - %s" % (prediction, expression), (x + 4, y + h - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 170, 0), lineType=cv2.LINE_AA)
 
     cv2.imshow('img', cv2.resize(img, None, fx=0.5, fy=0.5))
     cv2.waitKey()
