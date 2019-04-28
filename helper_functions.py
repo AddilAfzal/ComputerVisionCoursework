@@ -1,3 +1,4 @@
+from collections import Counter
 from shutil import rmtree
 from os import listdir, path, makedirs
 
@@ -153,3 +154,10 @@ def deskew(img):
     # Apply affine transform
     img = cv2.warpAffine(img, M, (SZ, SZ), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
     return img
+
+
+def show_accuracy(predictions_with_actual):
+    counter = Counter(map(lambda x: x[0] == x[1], predictions_with_actual))
+    t, f = counter[True], counter[False]
+
+    print("Accuracy %s/%s (%s%%)" % (t, t + f, round(t / (t + f) * 10000) / 100))

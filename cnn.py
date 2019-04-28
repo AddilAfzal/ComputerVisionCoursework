@@ -152,7 +152,7 @@ def predict(image):
     model.training = False
     model.transform_input = False
 
-    checkpoint = torch.load(Path('torchFile1'))
+    checkpoint = torch.load(Path('trained_data_files/torchFile1'))
     model.load_state_dict(checkpoint)
 
     model.to(device)

@@ -1,5 +1,6 @@
 from operator import itemgetter
 
+import face_recognition
 from math import floor
 
 from cnn import predict, start_training
@@ -8,14 +9,14 @@ import cv2, subprocess as sp, numpy as np
 
 from settings import folders_location, cnn_folders_location, face_folders_location, group_images_location, \
     group_image_faces_location, group_image_faces_location_two
+from svm import predict_svm
 
 recognizer = cv2.face.LBPHFaceRecognizer_create()
 
 
-def show_image(img, dim):
-    x, y, w, h = dim
+def show_image(img):
 
-    cv2.imshow('img', img[y:y+h, x:x+w])
+    cv2.imshow('img', img)
     cv2.waitKey()
     cv2.destroyAllWindows()
 
@@ -215,21 +216,20 @@ def recognise_face(img_path=None, img=None):
 
 
 def find_faces_and_label():
-    img = cv2.imread('group3.jpg')
+    img = cv2.imread('images/group3.jpg')
 
     faces = get_faces(img, position=True, greyscale=False, check_eyes=False)
 
-    from facial_expressions import predict_expression_svm
+    predictions = predict_svm([img[y:y + h, x:x + w] for x, y, w, h in faces], 'HOG')
 
-    for face in faces:
+    for face, prediction in zip(faces, predictions):
         x, y, w, h = face
 
-        prediction, level = predict(img[y:y+h, x:x+w])
-        expression = predict_expression_svm([img[y:y+h, x:x+w]])
+        level = 9
 
         # cv2.putText(img, "%s %s" % (number, (accuracy*100).round()/100), (x + 2, y + h - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), lineType=cv2.LINE_AA)
         cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0) if level > 8 else (0, 0, 255), 3)
-        cv2.putText(img, "%s - %s" % (prediction, expression), (x + 4, y + h - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 170, 0), lineType=cv2.LINE_AA)
+        cv2.putText(img, "%s - %s" % (prediction, level), (x + 4, y + h - 4), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 170, 0), lineType=cv2.LINE_AA)
 
     cv2.imshow('img', cv2.resize(img, None, fx=0.5, fy=0.5))
     cv2.waitKey()
