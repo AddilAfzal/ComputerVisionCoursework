@@ -1,3 +1,5 @@
+import pickle
+
 import cv2, numpy as np
 from os import listdir
 from cv2.xfeatures2d import SURF_create
@@ -32,14 +34,14 @@ def train_svm(feature_type):
 
     folders = listdir(training_faces_location)
 
-    bow = cv2.BOWKMeansTrainer(200)
+    bow = cv2.BOWKMeansTrainer(500)
     bow_extract = cv2.BOWImgDescriptorExtractor(surf, matcher)
 
     for index, folder in enumerate(folders):
         person_directory = training_faces_location + folder + "/"
         all_filenames = listdir(person_directory)
-
-        sample_filenames = np.random.choice(all_filenames, 10, replace=False)  # Extract 10 images from each folder
+        print(folder)
+        sample_filenames = np.random.choice(all_filenames, 29, replace=False)  # Extract 10 images from each folder
         # test_filenames = list(set(sample_filenames) - set(all_filenames))
 
         for filename in all_filenames:
@@ -67,7 +69,7 @@ def train_svm(feature_type):
 
         for folder in folders:
             items = list(filter(lambda x: x[0] == folder, tmp))
-            sample_indexes = np.random.choice(len(items), 10, replace=False)  # Extract 10 images from each folder
+            sample_indexes = np.random.choice(len(items), 29, replace=False)  # Extract 10 images from each folder
 
             for i, (label, image) in enumerate(items):
                 surfkp = surf.detect(image)
@@ -88,7 +90,14 @@ def train_svm(feature_type):
         svm.train(np.float32(faces), cv2.ml.ROW_SAMPLE, np.array(labels))
 
     elif feature_type == "SURF":
-        svm.trainAuto(np.float32(faces), cv2.ml.ROW_SAMPLE, np.array(labels))
+        svm.setC(11)                # Set SVM C value - was manually determined
+        svm.setGamma(11.63)     # Set SVM Gamma value - was manually determined
+        svm.train(np.float32(faces), cv2.ml.ROW_SAMPLE, np.array(labels))
+
+        with open('trained_data_files/surf_svm_bow_pickle.pickle', 'wb') as f:
+            cluster = bow.cluster()
+            print(cluster.__len__())
+            pickle.dump(cluster, f)
 
     # Save trained model
     svm.save("trained_data_files/%s_svm.yml" % feature_type.lower())
@@ -108,47 +117,41 @@ def predict_svm(faces, feature_type, transformed=False):
     :param transformed: whether the list of imaged has already been transformed.
     :return:
     """
-    dataset = []
+    predict_dataset = list()
     train_file = "trained_data_files/%s_svm.yml" % feature_type.lower()
     print(train_file)
     svm = cv2.ml.SVM_load(train_file)
 
     if feature_type == "HOG":
-        from script import show_image
 
         if not transformed:
             for image in faces:
-                show_image(image)
-                dataset.append(image_transform(image, feature_type))
+                predict_dataset.append(image_transform(image, feature_type))
 
-            return svm.predict(np.float32(dataset))[1].ravel()
+            return svm.predict(np.float32(predict_dataset))[1].ravel()
 
         else:
             return svm.predict(np.float32(faces))[1].ravel()
 
     elif feature_type == "SURF":
         if not transformed:
-            bow = cv2.BOWKMeansTrainer(200)
             bow_extract = cv2.BOWImgDescriptorExtractor(surf, matcher)
-            tmp = []
+
+            with open('trained_data_files/surf_svm_bow_pickle.pickle', 'rb') as f:
+                dictionary = pickle.load(f)
+
+            bow_extract.setVocabulary(dictionary)
 
             for face in faces:
                 image_transformed = image_transform(face, feature_type)
-                kp, dataset = surf.detectAndCompute(image_transformed, None)
-                bow.add(dataset)
-                tmp.append(image_transformed)
-
-            bow_extract.setVocabulary(bow.cluster())
-
-            for face in tmp:
-                surfkp = surf.detect(face)
-                bowsig = bow_extract.compute(face, surfkp)
-                dataset.extend(bowsig)
+                surf_kp = surf.detect(image_transformed)
+                bow_sig = bow_extract.compute(image_transformed, surf_kp)
+                predict_dataset.extend(bow_sig)
 
         else:
-            dataset = faces
+            predict_dataset = faces
 
-        return svm.predict(np.float32(dataset))[1].ravel()
+        return list(map(int, svm.predict(np.float32(predict_dataset))[1].ravel()))
 
     else:
         raise Exception("Missing feature type")

@@ -8,7 +8,6 @@ from torch.optim import lr_scheduler
 import numpy as np
 import torchvision
 from torchvision import datasets, models, transforms
-import matplotlib.pyplot as plt
 import time
 import os
 import copy
@@ -17,7 +16,6 @@ from torchvision.transforms import transforms
 from PIL import Image
 from pathlib import Path
 
-plt.ion()   # interactive mode
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # torch.set_default_tensor_type(torch.cuda.FloatTensor)
@@ -131,51 +129,65 @@ def start_training():
     optimizer_ft = optim.SGD(model_ft.parameters(), lr=0.001, momentum=0.9)
 
     # Decay LR by a factor of 0.1 every 7 epochs
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.2)
 
     model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
                            num_epochs=20)
 
-    torch.save(model_ft.state_dict(), "torchFile1")
+    torch.save(model_ft.state_dict(), "trained_data_files/torchFile")
 
     return model_ft
 
 
-def predict(image):
-    model = models.resnet18()
+def predict_cnn(image=None, images=None):
 
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, 69)
+    def predict_single(image):
+        model = models.resnet18()
 
-    model.eval()
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, 69)
 
-    model.training = False
-    model.transform_input = False
+        model.eval()
 
-    checkpoint = torch.load(Path('trained_data_files/torchFile1'))
-    model.load_state_dict(checkpoint)
+        model.training = False
+        model.transform_input = False
 
-    model.to(device)
-    # image = Image.open(Path('1.jpg'))
+        checkpoint = torch.load(Path('trained_data_files/torchFile'))
+        model.load_state_dict(checkpoint)
 
-    # image = cv2.imread('1.jpg')
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = Image.fromarray(image)
+        model.to(device)
+        # image = Image.open(Path('1.jpg'))
 
-    x = data_transforms['val'](image)
-    # x = x.unsqueeze_(0)
-    x = x.to(device)
+        # image = cv2.imread('1.jpg')
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
 
-    x = x.view(1, 3, 224, 224)
+        x = data_transforms['val'](image)
+        # x = x.unsqueeze_(0)
+        x = x.to(device)
 
-    output = model(x)
+        x = x.view(1, 3, 224, 224)
 
-    accuracies, ids = torch.max(output.data, 1)
+        output = model(x)
+
+        accuracies, ids = torch.max(output.data, 1)
 
 
-    q = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '2', '20', '21', '22', '24', '3', '33', '34', '36', '37',
-     '38', '39', '4', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '5', '50', '51', '52', '53', '54',
-     '55', '56', '57', '58', '59', '6', '60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '7', '70', '71',
-     '72', '73', '74', '75', '76', '77', '78', '79', '8', '80', '81', '9']
+        q = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '2', '20', '21', '22', '24', '3', '33', '34', '36', '37',
+         '38', '39', '4', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '5', '50', '51', '52', '53', '54',
+         '55', '56', '57', '58', '59', '6', '60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '7', '70', '71',
+         '72', '73', '74', '75', '76', '77', '78', '79', '8', '80', '81', '9']
 
-    return q[ids[0]], round(float(accuracies)*100)/100
+        return q[ids[0]], round(float(accuracies)*100)/100
+
+    if image is not None:
+
+        return predict_single(image)
+
+    elif images is not None:
+
+        predictions = []
+        for image in images:
+            predictions.append(predict_single(image)[0])
+
+        return predictions

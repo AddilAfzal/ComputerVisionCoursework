@@ -47,16 +47,17 @@ def train_expressions_svm():
 
         for image_filename in image_filenames:
             print(image_filename)
+            name = image_filename[2:]
 
-            if happy_label in image_filename:
+            if happy_label in name or neutral_label in name:
                 label = 0
-            elif sad_label in image_filename:
+            elif sad_label in name:
                 label = 1
-            elif surprised_label in image_filename:
+            elif surprised_label in name:
                 label = 2
-            elif angry_label in image_filename:
+            elif angry_label in name:
                 label = 3
-            elif afraid_label in image_filename or other in image_filename or neutral_label in image_filename:
+            elif afraid_label in name or other in name:
                 continue
             else:
                 raise Exception("Label error")

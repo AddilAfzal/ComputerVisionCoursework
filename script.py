@@ -2,13 +2,17 @@ from operator import itemgetter
 
 import face_recognition
 from math import floor
+from sklearn.metrics import confusion_matrix
 
-from cnn import predict, start_training
+from cnn import predict_cnn, start_training
+from facial_expression_cnn import predict_expression
 from helper_functions import *
 import cv2, subprocess as sp, numpy as np
 
+from knn import predict_knn
 from settings import folders_location, cnn_folders_location, face_folders_location, group_images_location, \
-    group_image_faces_location, group_image_faces_location_two
+    group_image_faces_location, group_image_faces_location_two, group_videos_location, group_video_images_location, \
+    group_video_faces_location, group_video_faces_location_2, facial_expressions_folder
 from svm import predict_svm
 
 recognizer = cv2.face.LBPHFaceRecognizer_create()
@@ -21,7 +25,7 @@ def show_image(img):
     cv2.destroyAllWindows()
 
 
-def get_faces(img, position=False, greyscale=True, check_eyes=True, use_custom_scale=True):
+def get_faces(img, position=False, greyscale=True, check_eyes=False, use_custom_scale=True):
     """
     Given an image, extract all faces.
     :param use_custom_scale:
@@ -35,7 +39,7 @@ def get_faces(img, position=False, greyscale=True, check_eyes=True, use_custom_s
     # Convert the image to greyscale
     grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    scale = [1.1, 20] if use_custom_scale else []
+    scale = [1.1, 25] if use_custom_scale else []
 
     # Find the faces
     faces = face_cascade.detectMultiScale(grey, *scale)
@@ -64,9 +68,13 @@ def get_faces(img, position=False, greyscale=True, check_eyes=True, use_custom_s
         if not check_eyes or number_of_eyes(face) in [1, 2]:
             faces_list.append((x, y, w, h) if position else face)
 
-    if not faces_list:
-        print("No face")
+    # if not faces_list:
+    #     print("No face")
 
+    # if len(faces_list) == 0 and check_eyes is True:
+    #     return get_faces(img=img, position=position, greyscale=greyscale, check_eyes=False,
+    #                      use_custom_scale=use_custom_scale)
+    # else:
     return faces_list
 
 
@@ -216,32 +224,37 @@ def recognise_face(img_path=None, img=None):
 
 
 def find_faces_and_label():
-    img = cv2.imread('images/group3.jpg')
+    img = cv2.imread('images/group.jpg')
 
-    faces = get_faces(img, position=True, greyscale=False, check_eyes=False)
+    faces = face_recognition.face_locations(img)
+    # faces = get_faces(img, position=True, greyscale=False, check_eyes=False)
 
-    predictions = predict_svm([img[y:y + h, x:x + w] for x, y, w, h in faces], 'HOG')
+    tmp = [img[top:bottom, left:right] for top, right, bottom, left in faces]
 
-    for face, prediction in zip(faces, predictions):
-        x, y, w, h = face
+    predictions = predict_cnn(images=tmp)
+    from facial_expressions import predict_expression_svm
+    predictions_expressions = predict_expression_svm(tmp)
 
-        level = 9
+    for face, prediction, prediction_exp in zip(faces, predictions, predictions_expressions):
+        top, right, bottom, left = face
 
-        # cv2.putText(img, "%s %s" % (number, (accuracy*100).round()/100), (x + 2, y + h - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), lineType=cv2.LINE_AA)
-        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0) if level > 8 else (0, 0, 255), 3)
-        cv2.putText(img, "%s - %s" % (prediction, level), (x + 4, y + h - 4), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 170, 0), lineType=cv2.LINE_AA)
+        label = prediction_exp
 
+        cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 3)
+        cv2.putText(img, "%s" % int(prediction), (left + 3, bottom - 4), cv2.FONT_HERSHEY_DUPLEX, 2, (0, 170, 0), lineType=cv2.LINE_AA)
+
+    cv2.imwrite('output.jpg', img)
     cv2.imshow('img', cv2.resize(img, None, fx=0.5, fy=0.5))
     cv2.waitKey()
     cv2.destroyAllWindows()
 
 
-def format_cnn():
+def format_cnn(only=[]):
     """
     For each folder, extract images from each of the videos
     :return:
     """
-    individuals = listdir(folders_location)
+    individuals = only if only else listdir(cnn_folders_location)
 
     for individual_folder_name in individuals:
         individual_folder_path = folders_location + individual_folder_name + "/"
@@ -263,34 +276,45 @@ def format_cnn():
 
                 print(video_file_path)
 
-                cmd = ('ffmpeg -i \'' + video_file_path + '\' -qscale:v 2 -r 10.0 \'' + cnn_image_folder_path + '_%03d-' + str(q) + '.jpg\'')
+                cmd = ('ffmpeg -i \'' + video_file_path + '\' -qscale:v 2 -r 20.0 \'' + cnn_image_folder_path + str(q) + '_%03d-' + '.jpg\'')
                 sp.call(cmd, shell=True)
 
                 q += 1
 
 
 def create_test_set():
-    train_percentage = 0.3
+    val_percentage = 0.3
+    test_percentage = 0.1
 
     individuals = listdir(face_folders_location + "train/")
 
     for individual_folder_name in individuals:
         individual_folder_path = face_folders_location + "train/" + individual_folder_name + "/"
         val_individual_folder_path = face_folders_location + "val/" + individual_folder_name + "/"
+        test_individual_folder_path = face_folders_location + "test/" + individual_folder_name + "/"
 
         if not path.exists(val_individual_folder_path):
             makedirs(val_individual_folder_path)
+
+        if not path.exists(test_individual_folder_path):
+            makedirs(test_individual_folder_path)
 
         image_filenames = listdir(individual_folder_path)
         num_of_images = len(image_filenames)
 
         # Sample a number of images to take from the folder.
-        sample_images = np.random.choice(image_filenames, floor(num_of_images*train_percentage), replace=False)
+        sample_images = np.random.choice(image_filenames, floor(num_of_images*val_percentage), replace=False)
+        remaining_image = list(set(image_filenames) - set(sample_images))
+        test_images = np.random.choice(remaining_image, floor(num_of_images*test_percentage), replace=False)
 
         print("%s of %s" % (sample_images.__len__(), num_of_images))
 
         for sample_image in sample_images:
             cmd = "mv '%s' '%s'" % (individual_folder_path + sample_image, val_individual_folder_path + sample_image)
+            sp.call(cmd, shell=True)
+
+        for test_image in test_images:
+            cmd = "mv '%s' '%s'" % (individual_folder_path + test_image, test_individual_folder_path + test_image)
             sp.call(cmd, shell=True)
 
         print(individual_folder_path)
@@ -334,7 +358,7 @@ def extract_faces_from_groups():
         faces = get_faces(image, greyscale=False)
 
         for face in faces:
-            p1, p2 = predict(face)
+            p1, p2 = predict_cnn(face)
 
             cv2.imwrite('%s%s-%s.jpg' % (group_image_faces_location, p1, str(i)), face)
             i += 1
@@ -344,10 +368,18 @@ def combine_group_extract_with_cnn():
     individuals = listdir(folders_location)
 
     for individual in individuals:
-        group_extracts = list(filter(lambda i: i[-3:] in ['jpg'], listdir(
-            folders_location + individual + "/group_extract")))
-        for image_name in group_extracts:
-            cmd = "cp '%s' '%s'" % (folders_location + individual + "/group_extract/" + image_name, face_folders_location + "/train/" + individual + "/")
+    #     group_extracts = list(filter(lambda i: i[-3:] in ['jpg'], listdir(
+    #         folders_location + individual + "/group_extract")))
+
+        group_extracts_2 = list(filter(lambda i: i[-3:] in ['jpg'], listdir(
+            folders_location + individual + "/group_extract_2")))
+
+        # for image_name in group_extracts:
+        #     cmd = "cp '%s' '%s'" % (folders_location + individual + "/group_extract/" + image_name, face_folders_location + "/train/" + individual + "/")
+        #     sp.call(cmd, shell=True)
+
+        for image_name in group_extracts_2:
+            cmd = "cp '%s' '%s'" % (folders_location + individual + "/group_extract_2/" + image_name, face_folders_location + "/train/" + individual + "/")
             sp.call(cmd, shell=True)
 
 
@@ -371,3 +403,222 @@ def prepare_cnn():
     create_test_set()
     start_training()
     re_label_group_extractions()
+
+
+def extract_frames_from_group_videos():
+
+    video_file_names = list(filter(lambda i: i[-3:] in ['mov', 'mp4'], listdir(group_videos_location)))
+
+    q = 0
+
+    for video_file_name in video_file_names:
+
+        # Folder per video file.
+        image_folder_path = group_video_images_location + ("angle_%s/" % q)
+        # print(video_folder_path)
+
+        if not path.exists(image_folder_path):
+            makedirs(image_folder_path)
+
+        video_file_path = group_videos_location + video_file_name
+
+        print(video_file_path)
+
+        cmd = 'ffmpeg -i \'' + video_file_path + '\' -qscale:v 2 \'' + image_folder_path + '_%03d.jpg\''
+        sp.call(cmd, shell=True)
+
+        q += 1
+
+
+def extract_faces_from_frames_and_label():
+
+    angles = listdir(group_video_images_location)
+    i = 0
+
+    for angle in angles:
+        angle_folder_location = group_video_images_location + angle + "/"
+        images = listdir(angle_folder_location)
+        print(angle_folder_location)
+
+        for index, image_filename in enumerate(images):
+
+            group_image = cv2.imread(angle_folder_location + image_filename)
+            faces = get_faces(group_image, greyscale=False)
+
+            for face in faces:
+                p1, acc = predict(face)
+
+                cv2.imwrite('%s%s-%s.jpg' % (group_video_faces_location, p1, str(i)), face)
+                i += 1
+
+
+def re_label_group_extractions_2():
+    files = list(filter(lambda i: i[-3:] in ['jpg'], listdir(group_video_faces_location)))
+    print(files)
+
+    i = 1
+    for file_name in files:
+        face_image = cv2.imread(group_video_faces_location + file_name)
+
+        p1, p2 = predict(face_image)
+
+        cv2.imwrite('%s%s-%s.jpg' % (group_video_faces_location_2, p1, str(i)), face_image)
+        i += 1
+
+
+def display_matrix(matrix, img):
+    img = cv2.imread(img)
+
+    for i, x, y in matrix:
+        print(i, x, y)
+        cv2.putText(img, str(i), (x, y), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 170, 0), lineType=cv2.LINE_AA)
+
+    cv2.imshow('img', img)
+    cv2.waitKey()
+    cv2.destroyAllWindows()
+
+
+def sort_facial_expressions():
+    dataset_path = "/home/addil/Desktop/KDEF_and_AKDEF/KDEF/"
+
+    happy_label = ("HA", "Happy")
+    sad_label = ("SA", "Sad")
+    surprised_label = ("SU", "Surprised")
+    angry_label = ("AN", "Angry")
+    afraid_label = ("AF", "Afraid")
+    neutral_label = ("NE", "Neutral")
+    other = ("DI", "DI?")
+
+    folders = listdir(dataset_path)
+
+    for folder_name in folders:
+        folder_path = dataset_path + folder_name + "/"
+        image_filenames = filter(lambda x: 'FL' not in x and 'FR' not in x, listdir(folder_path))
+
+        print(image_filenames)
+
+        for image_filename in image_filenames:
+            image_path = folder_path + image_filename
+            image = cv2.imread(image_path)
+
+            face = get_faces(image, greyscale=False, check_eyes=True, use_custom_scale=False)
+
+            if len(face) > 0:
+                face = face[0]
+            else:
+                continue
+
+            print(image_filename)
+
+            filename_striped = image_filename[2:]
+
+            if happy_label[0] in filename_striped:
+                label = happy_label[1]
+            elif sad_label[0] in filename_striped:
+                label = sad_label[1]
+            elif surprised_label[0] in filename_striped:
+                label = surprised_label[1]
+            elif angry_label[0] in filename_striped:
+                label = angry_label[1]
+            elif afraid_label[0] in filename_striped:
+                label = afraid_label[1]
+            elif neutral_label[0] in filename_striped:
+                label = neutral_label[1]
+            elif other[0] in filename_striped:
+                label = other[1]
+            else:
+                raise Exception("Label error")
+
+            save_folder = facial_expressions_folder + str(label) + "/"
+
+            if not path.exists(save_folder):
+                makedirs(save_folder)
+
+            cv2.imwrite(save_folder + "/" + image_filename, face)
+
+
+def create_test_set_facial_expressions():
+    train_percentage = 0.7
+
+    individuals = listdir(facial_expressions_folder + "train/")
+
+    for individual_folder_name in individuals:
+        individual_folder_path = facial_expressions_folder + "train/" + individual_folder_name + "/"
+        val_individual_folder_path = facial_expressions_folder + "val/" + individual_folder_name + "/"
+
+        if not path.exists(val_individual_folder_path):
+            makedirs(val_individual_folder_path)
+
+        image_filenames = listdir(individual_folder_path)
+        num_of_images = len(image_filenames)
+
+        # Sample a number of images to take from the folder.
+        sample_images = np.random.choice(image_filenames, floor(num_of_images*train_percentage), replace=False)
+
+        print("%s of %s" % (sample_images.__len__(), num_of_images))
+
+        for sample_image in sample_images:
+            cmd = "mv '%s' '%s'" % (individual_folder_path + sample_image, val_individual_folder_path + sample_image)
+            sp.call(cmd, shell=True)
+
+        print(individual_folder_path)
+
+
+def extract_faces_from_test_image():
+    """
+    Method to extract faces from single image with the predicted class as the name of the file.
+    :return:
+    """
+    image = cv2.imread("images/group3.jpg")
+
+    faces = face_recognition.face_locations(image)
+
+    index = 0
+    for face in faces:
+        top, right, bottom, left = face
+
+        label = predict_cnn(image[top:bottom, left:right])[0]
+        cv2.imwrite("test_images/%s-%s.jpg" % (label, index), image[top:bottom, left:right])
+
+        index += 1
+
+
+def make_confusion_matrix():
+    """
+    Method to create the confusion matrix for the CNN
+    :return:
+    """
+    # image = cv2.imread("images/group.jpg")
+
+    predicted = []
+    actual = []
+    # faces = face_recognition.face_locations(image)
+    #
+    # for face in faces:
+    #     top, right, bottom, left = face
+    #
+    #     label = predict_cnn(image[top:bottom, left:right])[0]
+    #     predicted.append(label)
+    #
+    #     print(label)
+    #     show_image(image[top:bottom, left:right])
+    #     tmp = input()
+    #     actual.append(label if tmp == "" else tmp)
+
+    individuals = listdir(face_folders_location + "test/")
+
+    for individual in individuals:
+        test_individual_folder_path = face_folders_location + "test/" + individual + "/"
+        filenames = listdir(test_individual_folder_path)
+
+        for filename in filenames:
+            image = cv2.imread(test_individual_folder_path + filename)
+            prediction = predict_cnn(image)[0]
+            predicted.append(prediction)
+            actual.append(individual)
+
+
+    print(predicted)
+    print(actual)
+
+    return actual, predicted
